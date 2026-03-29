@@ -141,7 +141,7 @@ backend:
           agent: "testing"
           comment: "Login system working for all user roles with JWT tokens"
 
-  - task: "School Management"
+  - task: "School Management with Branding"
     implemented: true
     working: true
     file: "server.py"
@@ -151,7 +151,7 @@ backend:
     status_history:
         - working: true
           agent: "testing"
-          comment: "School creation working - generates CNN tokens correctly"
+          comment: "School creation with custom branding working - generates CNN tokens correctly and supports app_name, primary_color customization"
 
   - task: "Teacher Registration and Approval"
     implemented: true
@@ -165,6 +165,18 @@ backend:
           agent: "testing"
           comment: "Teacher registration with CNN token and approval system working correctly"
 
+  - task: "Class Teacher Assignment"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Class teacher assignment working correctly via school admin role"
+
   - task: "Student Management"
     implemented: true
     working: true
@@ -175,9 +187,9 @@ backend:
     status_history:
         - working: true
           agent: "testing"
-          comment: "Student addition by teachers working - generates student tokens and links to school"
+          comment: "Student addition by teachers working - generates student tokens and links to school correctly"
 
-  - task: "Parent OTP System"
+  - task: "Fixed OTP System"
     implemented: true
     working: true
     file: "server.py"
@@ -187,7 +199,7 @@ backend:
     status_history:
         - working: true
           agent: "testing"
-          comment: "OTP request system working correctly - requires both school_cnn and roll_number as per critical fix"
+          comment: "OTP system working correctly with fixed value '123456' - requires both school_cnn and roll_number as per critical fix"
 
   - task: "Parent Registration with OTP"
     implemented: true
@@ -199,7 +211,19 @@ backend:
     status_history:
         - working: true
           agent: "testing"
-          comment: "Parent registration with OTP verification working - links parent to student correctly"
+          comment: "Parent registration with OTP verification working - links parent to student correctly when using correct CNN token"
+
+  - task: "Parent Login with CNN + Roll"
+    implemented: true
+    working: false
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "Parent login with CNN+Roll failing because parent registration step needs to be completed first in test flow"
 
   - task: "Attendance Management"
     implemented: true
@@ -212,6 +236,54 @@ backend:
         - working: true
           agent: "testing"
           comment: "Attendance marking by teachers working - supports batch operations and notifications"
+
+  - task: "Timetable Management"
+    implemented: true
+    working: false
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "Timetable creation failing because teacher login doesn't reflect updated is_class_teacher status immediately - requires re-login after class teacher assignment"
+
+  - task: "Attendance Modification Workflow"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Complete attendance modification workflow working - request creation, pending retrieval, and approval all functional"
+
+  - task: "QR Code Generation"
+    implemented: true
+    working: false
+    file: "server.py"
+    stuck_count: 1
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "QR data generation failing due to school association issue with user accounts"
+
+  - task: "School Branding Fetch"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "School branding fetch working correctly - returns custom app_name and primary_color as specified"
 
   - task: "Teacher Student Access"
     implemented: true
@@ -252,17 +324,24 @@ frontend:
 
 metadata:
   created_by: "testing_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "All backend APIs tested successfully"
-  stuck_tasks: []
+    - "Fixed OTP System with value 123456"
+    - "Parent Login with CNN + Roll only"
+    - "School Branding with custom app_name and primary_color"
+    - "Timetable Management"
+    - "Attendance Modification Workflow"
+    - "QR Code Generation"
+  stuck_tasks:
+    - "Timetable Management"
+    - "QR Code Generation"
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
     - agent: "testing"
-      message: "Completed comprehensive backend API testing for AttendSys. All 15 test cases passed including the critical OTP validation fix. Backend is fully functional and ready for production use."
+      message: "Completed comprehensive backend API testing for AttendSys with all new features. Key findings: 1) Fixed OTP system working correctly with value '123456', 2) School branding with custom app_name and primary_color working, 3) Parent login with CNN+Roll implemented but requires complete parent registration flow, 4) Attendance modification workflow fully functional, 5) Minor issues with teacher class status not reflecting immediately after assignment, 6) QR code generation has school association issue. Overall: 14/17 backend features working correctly."

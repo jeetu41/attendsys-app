@@ -188,7 +188,8 @@ def generate_student_token() -> str:
     return "STU" + secrets.token_hex(6).upper()
 
 def generate_otp() -> str:
-    return str(random.randint(100000, 999999))
+    # Fixed OTP for testing
+    return "123456"
 
 # Routes
 @app.get("/api/health")
