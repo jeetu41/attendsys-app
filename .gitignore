@@ -80,3 +80,13 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+# Expo/React Native
+.metro-cache/
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
