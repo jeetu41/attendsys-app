@@ -76,6 +76,14 @@ export default function Register() {
 
     try {
       await register(formData);
+      
+      // Load school branding if CNN token was used
+      if (formData.school_cnn) {
+        const { loadBranding } = await import('../src/store/brandingStore');
+        const store = await import('../src/store/brandingStore');
+        await store.useBrandingStore.getState().loadBranding(formData.school_cnn);
+      }
+      
       router.replace('/');
     } catch (error: any) {
       Alert.alert('Registration Failed', error.message);
