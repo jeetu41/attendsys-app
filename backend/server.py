@@ -40,6 +40,8 @@ homework_collection = db["homework"]
 complaints_collection = db["complaints"]
 otps_collection = db["otps"]
 notifications_collection = db["notifications"]
+timetables_collection = db["timetables"]
+attendance_modifications_collection = db["attendance_modifications"]
 
 # JWT Config
 SECRET_KEY = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
@@ -117,6 +119,10 @@ class SetClassTeacher(BaseModel):
     teacher_id: str
     is_class_teacher: bool
 
+class SetClassTeacher(BaseModel):
+    teacher_id: str
+    is_class_teacher: bool
+
 class UpdatePhoto(BaseModel):
     photo_base64: str
 
@@ -124,6 +130,25 @@ class UpdateSchoolBranding(BaseModel):
     app_name: Optional[str] = None
     logo_base64: Optional[str] = None
     primary_color: Optional[str] = None
+
+class ParentLogin(BaseModel):
+    school_cnn: str
+    roll_number: str
+
+class AttendanceModificationRequest(BaseModel):
+    attendance_id: str
+    old_status: str
+    new_status: str
+    reason: str
+
+class ApproveModification(BaseModel):
+    request_id: str
+    approved: bool
+
+class TimetableCreate(BaseModel):
+    class_name: str
+    day: str
+    periods: List[dict]  # [{period: 1, subject: "Math", time: "9:00-10:00"}]
 
 # Helper Functions
 def hash_password(password: str) -> str:
@@ -811,6 +836,215 @@ def get_school_branding(cnn_token: str):
         "primary_color": school.get("primary_color", "#6366f1"),
         "school_name": school["name"]
     }
+
+# Parent Login without Email/Password (CNN + Roll Number)
+@app.post("/api/parent/login")
+def parent_login(login_data: ParentLogin):
+    # Find school by CNN
+    school = schools_collection.find_one({"cnn_token": login_data.school_cnn})
+    if not school:
+        raise HTTPException(status_code=404, detail="Invalid school CNN token")
+    
+    # Find student by roll number in this school
+    student = students_collection.find_one({
+        "roll_number": login_data.roll_number,
+        "school_id": str(school["_id"])
+    })
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found in this school")
+    
+    # Check if parent is already linked
+    if not student.get("parent_id"):
+        raise HTTPException(status_code=400, detail="No parent linked to this student. Please complete registration first.")
+    
+    # Get parent user
+    parent = users_collection.find_one({"_id": ObjectId(student["parent_id"])})
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent account not found")
+    
+    # Create token
+    token = create_access_token({"user_id": str(parent["_id"]), "role": "parent"})
+    
+    return {
+        "token": token,
+        "user": {
+            "id": str(parent["_id"]),
+            "name": parent["name"],
+            "role": "parent",
+            "phone": parent.get("phone")
+        },
+        "branding": {
+            "app_name": school.get("app_name", "AttendSys"),
+            "logo_base64": school.get("logo_base64"),
+            "primary_color": school.get("primary_color", "#6366f1"),
+            "school_name": school["name"]
+        }
+    }
+
+# Timetable Management (Class Teacher)
+@app.post("/api/teacher/timetable")
+def create_timetable(timetable_data: TimetableCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "teacher" or not current_user.get("is_class_teacher"):
+        raise HTTPException(status_code=403, detail="Only class teachers can manage timetables")
+    
+    # Delete existing timetable for this class and day
+    timetables_collection.delete_many({
+        "class_name": timetable_data.class_name,
+        "day": timetable_data.day,
+        "teacher_id": current_user["_id"]
+    })
+    
+    timetable_doc = {
+        "teacher_id": current_user["_id"],
+        "class_name": timetable_data.class_name,
+        "day": timetable_data.day,
+        "periods": timetable_data.periods,
+        "school_id": current_user.get("school_id"),
+        "created_at": datetime.utcnow()
+    }
+    
+    result = timetables_collection.insert_one(timetable_doc)
+    timetable_doc["_id"] = str(result.inserted_id)
+    
+    return timetable_doc
+
+@app.get("/api/teacher/timetable/{class_name}")
+def get_timetable(class_name: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["teacher", "parent"]:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    timetables = list(timetables_collection.find({"class_name": class_name}))
+    for tt in timetables:
+        tt["_id"] = str(tt["_id"])
+    
+    return timetables
+
+# Attendance Modification Request (Teacher)
+@app.post("/api/teacher/attendance/modify-request")
+def request_attendance_modification(
+    request_data: AttendanceModificationRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can request modifications")
+    
+    # Get attendance record
+    attendance = attendance_collection.find_one({"_id": ObjectId(request_data.attendance_id)})
+    if not attendance or attendance["teacher_id"] != current_user["_id"]:
+        raise HTTPException(status_code=404, detail="Attendance record not found")
+    
+    # Create modification request
+    modification_doc = {
+        "attendance_id": request_data.attendance_id,
+        "teacher_id": current_user["_id"],
+        "school_id": current_user.get("school_id"),
+        "student_id": attendance["student_id"],
+        "date": attendance["date"],
+        "old_status": request_data.old_status,
+        "new_status": request_data.new_status,
+        "reason": request_data.reason,
+        "status": "pending",
+        "created_at": datetime.utcnow()
+    }
+    
+    result = attendance_modifications_collection.insert_one(modification_doc)
+    modification_doc["_id"] = str(result.inserted_id)
+    
+    return {"message": "Modification request submitted", "request": modification_doc}
+
+# Admin: Approve/Reject Attendance Modifications
+@app.post("/api/admin/attendance/approve-modification")
+def approve_attendance_modification(
+    approval_data: ApproveModification,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] not in ["platform_admin", "school_admin"]:
+        raise HTTPException(status_code=403, detail="Only admins can approve modifications")
+    
+    # Get modification request
+    modification = attendance_modifications_collection.find_one({"_id": ObjectId(approval_data.request_id)})
+    if not modification:
+        raise HTTPException(status_code=404, detail="Modification request not found")
+    
+    if approval_data.approved:
+        # Update attendance record
+        attendance_collection.update_one(
+            {"_id": ObjectId(modification["attendance_id"])},
+            {"$set": {
+                "status": modification["new_status"],
+                "modified_at": datetime.utcnow(),
+                "modified_by": current_user["_id"]
+            }}
+        )
+        
+        # Update modification request status
+        attendance_modifications_collection.update_one(
+            {"_id": ObjectId(approval_data.request_id)},
+            {"$set": {
+                "status": "approved",
+                "approved_by": current_user["_id"],
+                "approved_at": datetime.utcnow()
+            }}
+        )
+        
+        return {"message": "Modification approved and attendance updated"}
+    else:
+        # Reject modification
+        attendance_modifications_collection.update_one(
+            {"_id": ObjectId(approval_data.request_id)},
+            {"$set": {
+                "status": "rejected",
+                "rejected_by": current_user["_id"],
+                "rejected_at": datetime.utcnow()
+            }}
+        )
+        
+        return {"message": "Modification request rejected"}
+
+@app.get("/api/admin/attendance/modifications/pending")
+def get_pending_modifications(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["platform_admin", "school_admin"]:
+        raise HTTPException(status_code=403, detail="Only admins can view modification requests")
+    
+    query = {"status": "pending"}
+    if current_user["role"] == "school_admin":
+        query["school_id"] = current_user.get("school_id")
+    
+    modifications = list(attendance_modifications_collection.find(query).sort("created_at", -1))
+    
+    for mod in modifications:
+        mod["_id"] = str(mod["_id"])
+        # Get student name
+        student = students_collection.find_one({"_id": ObjectId(mod["student_id"])})
+        if student:
+            mod["student_name"] = student["name"]
+            mod["class_name"] = student["class_name"]
+    
+    return modifications
+
+# Generate QR Code Data for School CNN
+@app.get("/api/school/qr-data")
+def get_school_qr_data(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["platform_admin", "school_admin"]:
+        raise HTTPException(status_code=403, detail="Only admins can generate QR codes")
+    
+    school_id = current_user.get("school_id")
+    if not school_id:
+        raise HTTPException(status_code=400, detail="No school associated with this account")
+    
+    school = schools_collection.find_one({"_id": ObjectId(school_id)})
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    # QR data contains CNN token
+    qr_data = {
+        "cnn_token": school["cnn_token"],
+        "school_name": school["name"],
+        "type": "school_registration"
+    }
+    
+    return qr_data
+
 
 if __name__ == "__main__":
     import uvicorn
