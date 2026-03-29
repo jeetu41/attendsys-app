@@ -68,6 +68,9 @@ class SchoolCreate(BaseModel):
     address: str
     contact_email: EmailStr
     contact_phone: str
+    app_name: Optional[str] = None  # Custom app name for white-label
+    logo_base64: Optional[str] = None  # School logo in base64
+    primary_color: Optional[str] = "#6366f1"  # Brand color
 
 class StudentCreate(BaseModel):
     name: str
@@ -113,6 +116,14 @@ class UpdateSubscription(BaseModel):
 class SetClassTeacher(BaseModel):
     teacher_id: str
     is_class_teacher: bool
+
+class UpdatePhoto(BaseModel):
+    photo_base64: str
+
+class UpdateSchoolBranding(BaseModel):
+    app_name: Optional[str] = None
+    logo_base64: Optional[str] = None
+    primary_color: Optional[str] = None
 
 # Helper Functions
 def hash_password(password: str) -> str:
@@ -205,6 +216,7 @@ def register(user_data: UserRegister):
         "name": user_data.name,
         "role": role,
         "phone": user_data.phone,
+        "photo_base64": None,  # Profile photo
         "school_id": school_id,
         "is_approved": True if role in ["platform_admin", "parent"] else False,
         "is_class_teacher": False,
@@ -278,6 +290,9 @@ def create_school(school_data: SchoolCreate, current_user: dict = Depends(get_cu
         "contact_email": school_data.contact_email,
         "contact_phone": school_data.contact_phone,
         "cnn_token": cnn_token,
+        "app_name": school_data.app_name or school_data.name,
+        "logo_base64": school_data.logo_base64,
+        "primary_color": school_data.primary_color or "#6366f1",
         "subscription_type": "school",
         "subscription_active": False,
         "message_balance": 0,
@@ -746,6 +761,56 @@ def get_my_complaints(current_user: dict = Depends(get_current_user)):
         complaint["_id"] = str(complaint["_id"])
     
     return complaints
+
+
+# Photo Management
+@app.post("/api/user/photo")
+def update_photo(photo_data: UpdatePhoto, current_user: dict = Depends(get_current_user)):
+    users_collection.update_one(
+        {"_id": ObjectId(current_user["_id"])},
+        {"$set": {"photo_base64": photo_data.photo_base64}}
+    )
+    return {"message": "Photo updated successfully"}
+
+# School Branding Management
+@app.post("/api/school/branding")
+def update_school_branding(branding_data: UpdateSchoolBranding, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["platform_admin", "school_admin"]:
+        raise HTTPException(status_code=403, detail="Only admins can update school branding")
+    
+    # Get school ID
+    school_id = current_user.get("school_id")
+    if not school_id and current_user["role"] == "platform_admin":
+        raise HTTPException(status_code=400, detail="Platform admin must specify school_id")
+    
+    update_data = {}
+    if branding_data.app_name:
+        update_data["app_name"] = branding_data.app_name
+    if branding_data.logo_base64:
+        update_data["logo_base64"] = branding_data.logo_base64
+    if branding_data.primary_color:
+        update_data["primary_color"] = branding_data.primary_color
+    
+    if update_data:
+        schools_collection.update_one(
+            {"_id": ObjectId(school_id)},
+            {"$set": update_data}
+        )
+    
+    return {"message": "School branding updated successfully"}
+
+@app.get("/api/school/branding/{cnn_token}")
+def get_school_branding(cnn_token: str):
+    school = schools_collection.find_one({"cnn_token": cnn_token})
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    
+    return {
+        "app_name": school.get("app_name", "AttendSys"),
+        "logo_base64": school.get("logo_base64"),
+        "primary_color": school.get("primary_color", "#6366f1"),
+        "school_name": school["name"]
+    }
 
 if __name__ == "__main__":
     import uvicorn
