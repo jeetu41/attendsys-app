@@ -14,9 +14,8 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../src/store/authStore';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
-import Constants from 'expo-constants';
 
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+const API_URL = 'https://absence-alert-4.preview.emergentagent.com';
 
 export default function Register() {
   const router = useRouter();
