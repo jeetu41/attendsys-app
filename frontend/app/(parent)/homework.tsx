@@ -8,11 +8,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
-import Constants from 'expo-constants';
 import { getAuthHeader, useAuthStore } from '../../src/store/authStore';
 import { useBrandingStore } from '../../src/store/brandingStore';
 
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+const API_URL = 'https://absence-alert-4.preview.emergentagent.com';
 
 interface Homework {
   _id: string;
